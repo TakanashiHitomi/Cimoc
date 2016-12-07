@@ -26,8 +26,8 @@ public class AboutActivity extends BackActivity implements AboutView {
     @BindView(R.id.about_layout) View mLayoutView;
 
     private AboutPresenter mPresenter;
-    private boolean update;
-    private boolean checking;
+    private boolean update = false;
+    private boolean checking = false;
 
     @Override
     protected void initPresenter() {
@@ -36,17 +36,9 @@ public class AboutActivity extends BackActivity implements AboutView {
     }
 
     @Override
-    protected void initProgressBar() {}
-
-    @Override
-    protected void initData() {
-        update = false;
-        checking = false;
-    }
-
-    @Override
     public void onDestroy() {
         mPresenter.detachView();
+        mPresenter = null;
         super.onDestroy();
     }
 
@@ -100,6 +92,11 @@ public class AboutActivity extends BackActivity implements AboutView {
     public void onCheckError() {
         mUpdateText.setText(R.string.about_update_fail);
         checking = false;
+    }
+
+    @Override
+    protected String getDefaultTitle() {
+        return getString(R.string.drawer_about);
     }
 
     @Override

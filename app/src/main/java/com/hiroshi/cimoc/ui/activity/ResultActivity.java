@@ -17,6 +17,7 @@ import com.hiroshi.cimoc.ui.view.ResultView;
 
 import java.util.ArrayList;
 import java.util.LinkedList;
+import java.util.List;
 
 import butterknife.BindView;
 
@@ -70,11 +71,13 @@ public class ResultActivity extends BackActivity implements ResultView, BaseAdap
 
     @Override
     protected void onDestroy() {
+        mPresenter.detachView();
+        mPresenter = null;
+        super.onDestroy();
         if (mProvider != null) {
             mProvider.clear();
+            mProvider = null;
         }
-        mPresenter.detachView();
-        super.onDestroy();
     }
 
     @Override
@@ -85,20 +88,32 @@ public class ResultActivity extends BackActivity implements ResultView, BaseAdap
     }
 
     @Override
-    public void onLoadSuccess(Comic comic) {
-        mProgressBar.setVisibility(View.GONE);
+    public void onSearchSuccess(Comic comic) {
+        hideProgressBar();
         mResultAdapter.add(comic);
     }
 
     @Override
+    public void onRecentLoadSuccess(List<Comic> list) {
+        hideProgressBar();
+        mResultAdapter.addAll(list);
+    }
+
+    @Override
+    public void onRecentLoadFail() {
+        hideProgressBar();
+        showSnackbar(R.string.common_parse_error);
+    }
+
+    @Override
     public void onResultEmpty() {
-        mProgressBar.setVisibility(View.GONE);
+        hideProgressBar();
         showSnackbar(R.string.result_empty);
     }
 
     @Override
     public void onSearchError() {
-        mProgressBar.setVisibility(View.GONE);
+        hideProgressBar();
         showSnackbar(R.string.result_error);
     }
 
@@ -114,11 +129,19 @@ public class ResultActivity extends BackActivity implements ResultView, BaseAdap
 
     @Override
     protected String getDefaultTitle() {
-        return getString(R.string.result);
+        return getIntent().getStringExtra(EXTRA_KEYWORD) == null ? getString(R.string.result_recent) : getString(R.string.result);
     }
 
     public static final String EXTRA_KEYWORD = "a";
     public static final String EXTRA_SOURCE = "b";
+
+    public static Intent createIntent(Context context, int source) {
+        Intent intent = new Intent(context, ResultActivity.class);
+        ArrayList<Integer> list = new ArrayList<>(1);
+        list.add(source);
+        intent.putIntegerArrayListExtra(EXTRA_SOURCE, list);
+        return intent;
+    }
 
     public static Intent createIntent(Context context, String keyword, ArrayList<Integer> list) {
         Intent intent = new Intent(context, ResultActivity.class);

@@ -19,7 +19,11 @@ public interface Parser {
 
     Request getInfoRequest(String cid);
 
-    List<Chapter> parseInfo(String html, Comic comic);
+    String parseInfo(String html, Comic comic);
+
+    Request getChapterRequest(String cid);
+
+    List<Chapter> parseChapter(String html);
 
     Request getBeforeImagesRequest();
 
@@ -28,6 +32,10 @@ public interface Parser {
     Request getImagesRequest(String cid, String path);
 
     List<ImageUrl> parseImages(String html);
+
+    Request getRecentRequest(int page);
+
+    List<Comic> parseRecent(String html, int page);
 
     Request getLazyRequest(String url);
 

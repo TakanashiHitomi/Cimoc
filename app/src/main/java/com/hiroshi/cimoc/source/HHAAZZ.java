@@ -20,8 +20,6 @@ import okhttp3.Request;
  */
 public class HHAAZZ extends MangaParser {
 
-    private String[] server = null;
-
     @Override
     public Request getSearchRequest(String keyword, int page) {
         if (page == 1) {
@@ -55,15 +53,8 @@ public class HHAAZZ extends MangaParser {
     }
 
     @Override
-    public List<Chapter> parseInfo(String html, Comic comic) {
-        List<Chapter> list = new LinkedList<>();
+    public String parseInfo(String html, Comic comic) {
         Node body = new Node(html);
-        for (Node node : body.list("#sort_div_p > a")) {
-            String c_title = node.attr("title");
-            String c_path = node.attr("href").substring(17);
-            list.add(new Chapter(c_title, c_path));
-        }
-
         String title = body.text("div.main > div > div.pic > div.con > h3");
         String cover = body.attr("div.main > div > div.pic > img", "src");
         String update = body.text("div.main > div > div.pic > div.con > p:eq(5)", 5);
@@ -72,6 +63,39 @@ public class HHAAZZ extends MangaParser {
         boolean status = body.text("div.main > div > div.pic > div.con > p:eq(4)").contains("完结");
         comic.setInfo(title, cover, update, intro, author, status);
 
+        return null;
+    }
+
+    @Override
+    public List<Chapter> parseChapter(String html) {
+        List<Chapter> list = new LinkedList<>();
+        Node body = new Node(html);
+        for (Node node : body.list("#sort_div_p > a")) {
+            String title = node.attr("title");
+            String path = node.attr("href").substring(17);
+            list.add(new Chapter(title, path));
+        }
+        return list;
+    }
+
+    @Override
+    public Request getRecentRequest(int page) {
+        String url = StringUtils.format("http://hhaazz.com/dfcomiclist_%d.htm", page);
+        return new Request.Builder().url(url).build();
+    }
+
+    @Override
+    public List<Comic> parseRecent(String html, int page) {
+        List<Comic> list = new LinkedList<>();
+        Node body = new Node(html);
+        for (Node node : body.list("li > a.pic")) {
+            String cid = node.attr("href", "/", 4);
+            String title = node.text("div.con > h3");
+            String cover = node.attr("img", "src");
+            String update = node.text("div.con > p > span", 0, 10);
+            String author = node.text("div.con > p:eq(1)");
+            list.add(new Comic(SourceManager.SOURCE_HHAAZZ, cid, title, cover, update, author));
+        }
         return list;
     }
 

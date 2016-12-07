@@ -9,9 +9,13 @@ import java.util.List;
  */
 public interface TaskView extends BaseView {
 
-    void onLoadSuccess(List<Task> list);
+    void onTaskLoadSuccess(List<Task> list);
+
+    void onTaskLoadFail();
 
     void onSortSuccess(List<Task> list);
+
+    void onChapterChange(String last);
 
     void onLoadIndexFail();
 
@@ -19,11 +23,7 @@ public interface TaskView extends BaseView {
 
     void onTaskParse(long id);
 
-    void onTaskDoing(long id, int max);
-
     void onTaskProcess(long id, int progress, int max);
-
-    void onTaskFinish(long id);
 
     void onTaskError(long id);
 

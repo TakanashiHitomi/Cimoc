@@ -1,7 +1,9 @@
 package com.hiroshi.cimoc.ui.adapter;
 
 import android.content.Context;
+import android.graphics.PorterDuff;
 import android.graphics.Rect;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.widget.RecyclerView;
 import android.view.View;
 import android.view.ViewGroup;
@@ -21,14 +23,19 @@ import butterknife.BindView;
  */
 public class TaskAdapter extends BaseAdapter<Task> {
 
-    public class TaskHolder extends BaseViewHolder {
+    private String last;
+    private int colorId;
+
+    static class TaskHolder extends BaseViewHolder {
         @BindView(R.id.task_page) TextView taskPage;
         @BindView(R.id.task_title) TextView taskTitle;
         @BindView(R.id.task_state) TextView taskState;
         @BindView(R.id.task_progress) ProgressBar taskProgress;
+        @BindView(R.id.task_last) View taskLast;
 
-        public TaskHolder(View view) {
+        TaskHolder(View view, int color) {
             super(view);
+            taskProgress.getProgressDrawable().setColorFilter(color, PorterDuff.Mode.SRC_ATOP);
         }
     }
 
@@ -39,11 +46,12 @@ public class TaskAdapter extends BaseAdapter<Task> {
     @Override
     public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
         View view = mInflater.inflate(R.layout.item_task, parent, false);
-        return new TaskHolder(view);
+        return new TaskHolder(view, ContextCompat.getColor(mContext, colorId));
     }
 
     @Override
     public void onBindViewHolder(RecyclerView.ViewHolder holder, int position) {
+        super.onBindViewHolder(holder, position);
         Task task = mDataSet.get(position);
         TaskHolder viewHolder = (TaskHolder) holder;
         viewHolder.taskTitle.setText(task.getTitle());
@@ -53,6 +61,11 @@ public class TaskAdapter extends BaseAdapter<Task> {
         viewHolder.taskPage.setText(StringUtils.getProgress(progress, max));
         viewHolder.taskProgress.setMax(max);
         viewHolder.taskProgress.setProgress(progress);
+        if (task.getPath().equals(last)) {
+            viewHolder.taskLast.setVisibility(View.VISIBLE);
+        } else {
+            viewHolder.taskLast.setVisibility(View.INVISIBLE);
+        }
     }
 
     @Override
@@ -60,9 +73,30 @@ public class TaskAdapter extends BaseAdapter<Task> {
         return new RecyclerView.ItemDecoration() {
             @Override
             public void getItemOffsets(Rect outRect, View view, RecyclerView parent, RecyclerView.State state) {
-                outRect.set(0, 0, 0, 10);
+                int offset = parent.getWidth() / 90;
+                outRect.set(0, 0, 0, offset);
             }
         };
+    }
+
+    public void setColorId(int colorId) {
+        this.colorId = colorId;
+    }
+
+    public void setLast(String value) {
+        if (value == null || value.equals(last)) {
+            return;
+        }
+        String temp = last;
+        last = value;
+        for (int i = 0; i != mDataSet.size(); ++i) {
+            String path = mDataSet.get(i).getPath();
+            if (path.equals(last)) {
+                notifyItemChanged(i);
+            } else if (path.equals(temp)) {
+                notifyItemChanged(i);
+            }
+        }
     }
 
     public int getPositionById(long id) {

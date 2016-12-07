@@ -26,7 +26,7 @@ public interface ReaderView extends BaseView {
 
     void onPrevLoadSuccess(List<ImageUrl> list);
 
-    void onInitLoadSuccess(List<ImageUrl> list, int progress);
+    void onInitLoadSuccess(List<ImageUrl> list, int progress, int source);
 
     void onChapterChange(Chapter chapter);
 
@@ -34,7 +34,7 @@ public interface ReaderView extends BaseView {
 
     void onImageLoadFail(int id);
 
-    void onPictureSaveSuccess();
+    void onPictureSaveSuccess(String path);
 
     void onPictureSaveFail();
 

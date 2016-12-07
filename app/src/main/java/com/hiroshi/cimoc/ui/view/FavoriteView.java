@@ -1,5 +1,6 @@
 package com.hiroshi.cimoc.ui.view;
 
+import com.hiroshi.cimoc.model.Comic;
 import com.hiroshi.cimoc.model.MiniComic;
 
 import java.util.List;
@@ -7,22 +8,22 @@ import java.util.List;
 /**
  * Created by Hiroshi on 2016/8/21.
  */
-public interface FavoriteView extends BaseView {
+public interface FavoriteView extends GridView {
 
-    void onItemAdd(MiniComic comic);
+    void OnComicFavorite(MiniComic comic);
 
-    void onItemAdd(List<MiniComic> list);
+    void OnComicRestore(List<MiniComic> list);
 
-    void onItemRemove(long id);
+    void OnComicUnFavorite(long id);
 
-    void onSourceRemove(int source);
-
-    void onComicUpdate(MiniComic comic);
+    void onComicUpdate(Comic comic, int progress, int max);
 
     void onCheckComplete();
 
-    void onProgressChange(int progress);
+    void onComicRead(MiniComic comic);
 
-    void onFilterLoad(String[] filter);
+    void onComicFilterSuccess(List<MiniComic> list);
+
+    void onComicFilterFail();
 
 }

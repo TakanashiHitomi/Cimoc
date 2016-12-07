@@ -35,7 +35,7 @@ public class NHentai extends MangaParser {
                 String cid = node.attr("href", "/", 2);
                 String title = node.text("div.caption");
                 String author = StringUtils.match("\\[(.*?)\\]", title, 1);
-                title = title.replaceFirst("\\[.*?\\]\\s+", "");
+                title = title.replaceFirst("\\[.*?\\]\\s*", "");
                 String cover = "https:".concat(node.attr("img", "src"));
                 return new Comic(SourceManager.SOURCE_NHENTAI, cid, title, cover, null, author);
             }
@@ -49,17 +49,42 @@ public class NHentai extends MangaParser {
     }
 
     @Override
-    public List<Chapter> parseInfo(String html, Comic comic) {
-        List<Chapter> list = new LinkedList<>();
+    public String parseInfo(String html, Comic comic) {
         Node body = new Node(html);
-        list.add(new Chapter("全一话", ""));
-
         String title = body.text("#info > h1");
         String intro = body.text("#info > h2");
         String author = body.text("#tags > div > span > a[href^=/artist/]");
-        String cover = "https:" + body.attr("#cover > a > img", "src");
+        String cover = "https:".concat(body.attr("#cover > a > img", "src"));
         comic.setInfo(title, cover, null, intro, author, true);
 
+        return null;
+    }
+
+    @Override
+    public List<Chapter> parseChapter(String html) {
+        List<Chapter> list = new LinkedList<>();
+        list.add(new Chapter("全一话", ""));
+        return list;
+    }
+
+    @Override
+    public Request getRecentRequest(int page) {
+        String url = StringUtils.format("https://nhentai.net/?page=%d", page);
+        return new Request.Builder().url(url).build();
+    }
+
+    @Override
+    public List<Comic> parseRecent(String html, int page) {
+        List<Comic> list = new LinkedList<>();
+        Node body = new Node(html);
+        for (Node node : body.list("#content > div.index-container > div > a")) {
+            String cid = node.attr("href", "/", 2);
+            String title = node.text("div.caption");
+            String author = StringUtils.match("\\[(.*?)\\]", title, 1);
+            title = title.replaceFirst("\\[.*?\\]\\s*", "");
+            String cover = "https:".concat(node.attr("img", "src"));
+            list.add(new Comic(SourceManager.SOURCE_NHENTAI, cid, title, cover, null, author));
+        }
         return list;
     }
 

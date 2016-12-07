@@ -24,16 +24,21 @@ import okhttp3.Request;
  */
 public class IKanman extends MangaParser {
 
+    public IKanman() {
+        server = new String[]{ "http://p.3qfm.com", "http://i.hamreus.com:8080",
+                "http://idx0.hamreus.com:8080", "http://ilt2.hamreus.com:8080"};
+    }
+
     @Override
     public Request getSearchRequest(String keyword, int page) {
-        String url = StringUtils.format("http://m.ikanman.com/s/%s.html?page=%d", keyword, page);
+        String url = StringUtils.format("http://m.ikanman.com/s/%s.html?page=%d&ajax=1", keyword, page);
         return new Request.Builder().url(url).build();
     }
 
     @Override
     public SearchIterator getSearchIterator(String html, int page) {
         Node body = new Node(html);
-        return new NodeIterator(body.list("#detail > li > a")) {
+        return new NodeIterator(body.list("li > a")) {
             @Override
             protected Comic parse(Node node) {
                 String cid = node.attr("href", "/", 2);
@@ -54,23 +59,42 @@ public class IKanman extends MangaParser {
     }
 
     @Override
-    public List<Chapter> parseInfo(String html, Comic comic) {
-        List<Chapter> list = new LinkedList<>();
+    public String parseInfo(String html, Comic comic) {
         Node body = new Node(html);
-        for (Node node : body.list("#chapterList > ul > li > a")) {
-            String c_title = node.text("b");
-            String c_path = node.attr("href", "/|\\.", 3);
-            list.add(new Chapter(c_title, c_path));
-        }
-
         String title = body.text("div.main-bar > h1");
         String cover = body.attr("div.book-detail > div.cont-list > div.thumb > img", "src");
         String update = body.text("div.book-detail > div.cont-list > dl:eq(2) > dd");
         String author = body.attr("div.book-detail > div.cont-list > dl:eq(3) > dd > a", "title");
-        String intro = body.exist("#bookIntro > p") ? body.text("#bookIntro > p") : body.text("#bookIntro");
+        String intro = body.text("#bookIntro");
         boolean status = "完结".equals(body.text("div.book-detail > div.cont-list > div.thumb > i"));
         comic.setInfo(title, cover, update, intro, author, status);
 
+        return comic.getCid();
+    }
+
+    @Override
+    public Request getChapterRequest(String cid) {
+        String url = "http://m.ikanman.com/support/chapters.aspx?id=".concat(cid);
+        return new Request.Builder().url(url).build();
+    }
+
+    @Override
+    public List<Chapter> parseChapter(String html) {
+        List<Chapter> list = new LinkedList<>();
+        Node body = new Node(html);
+        for (Node node : body.list("div.chapter-list")) {
+            List<Chapter> ulList = new LinkedList<>();
+            for (Node ul : node.list("ul")) {
+                List<Chapter> liList = new LinkedList<>();
+                for (Node li : ul.list("li > a")) {
+                    String title = li.attr("title");
+                    String path = li.attr("href", "/|\\.", 3);
+                    liList.add(new Chapter(title, path));
+                }
+                ulList.addAll(0, liList);
+            }
+            list.addAll(ulList);
+        }
         return list;
     }
 
@@ -94,11 +118,32 @@ public class IKanman extends MangaParser {
                 String jsonString = result.substring(11, result.length() - 9);
                 JSONArray array = new JSONObject(jsonString).getJSONArray("images");
                 for (int i = 0; i != array.length(); ++i) {
-                    list.add(new ImageUrl(i + 1, "http://i.hamreus.com:8080".concat(array.getString(i)), false));
+                    list.add(new ImageUrl(i + 1, buildUrl(array.getString(i)), false));
                 }
             } catch (Exception e) {
                 e.printStackTrace();
             }
+        }
+        return list;
+    }
+
+    @Override
+    public Request getRecentRequest(int page) {
+        String url = StringUtils.format("http://m.ikanman.com/update/?ajax=1&page=%d", page);
+        return new Request.Builder().url(url).build();
+    }
+
+    @Override
+    public List<Comic> parseRecent(String html, int page) {
+        List<Comic> list = new LinkedList<>();
+        Node body = new Node(html);
+        for (Node node : body.list("li > a")) {
+            String cid = node.attr("href", "/", 2);
+            String title = node.text("h3");
+            String cover = node.attr("div > img", "data-src");
+            String update = node.text("dl:eq(5) > dd");
+            String author = node.text("dl:eq(2) > dd");
+            list.add(new Comic(SourceManager.SOURCE_IKANMAN, cid, title, cover, update, author));
         }
         return list;
     }

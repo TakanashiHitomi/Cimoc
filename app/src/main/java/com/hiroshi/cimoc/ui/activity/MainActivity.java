@@ -1,10 +1,15 @@
 package com.hiroshi.cimoc.ui.activity;
 
-import android.app.FragmentManager;
-import android.app.FragmentTransaction;
 import android.content.Intent;
+import android.content.res.ColorStateList;
+import android.graphics.Color;
 import android.os.Bundle;
+import android.support.annotation.ColorRes;
+import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
+import android.support.annotation.StyleRes;
 import android.support.design.widget.NavigationView;
+import android.support.v4.content.ContextCompat;
 import android.support.v4.view.GravityCompat;
 import android.support.v4.widget.DrawerLayout;
 import android.support.v7.app.ActionBarDrawerToggle;
@@ -14,16 +19,19 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
+import com.facebook.drawee.interfaces.DraweeController;
+import com.facebook.drawee.view.SimpleDraweeView;
 import com.hiroshi.cimoc.CimocApplication;
 import com.hiroshi.cimoc.R;
 import com.hiroshi.cimoc.core.manager.PreferenceManager;
+import com.hiroshi.cimoc.model.Comic;
 import com.hiroshi.cimoc.presenter.MainPresenter;
 import com.hiroshi.cimoc.ui.fragment.BaseFragment;
-import com.hiroshi.cimoc.ui.fragment.CimocFragment;
-import com.hiroshi.cimoc.ui.fragment.DownloadFragment;
-import com.hiroshi.cimoc.ui.fragment.FavoriteFragment;
-import com.hiroshi.cimoc.ui.fragment.HistoryFragment;
-import com.hiroshi.cimoc.ui.fragment.SourceFragment;
+import com.hiroshi.cimoc.ui.fragment.ComicFragment;
+import com.hiroshi.cimoc.ui.fragment.SearchFragment;
+import com.hiroshi.cimoc.ui.fragment.classical.SourceFragment;
+import com.hiroshi.cimoc.ui.fragment.classical.TagFragment;
+import com.hiroshi.cimoc.ui.fragment.dialog.MessageDialogFragment;
 import com.hiroshi.cimoc.ui.view.MainView;
 
 import butterknife.BindView;
@@ -32,24 +40,27 @@ import butterknife.ButterKnife;
 /**
  * Created by Hiroshi on 2016/7/1.
  */
-public class MainActivity extends BaseActivity implements MainView {
+public class MainActivity extends BaseActivity implements MainView, NavigationView.OnNavigationItemSelectedListener,
+        MessageDialogFragment.MessageDialogListener {
 
-    private static final int FRAGMENT_NUM = 5;
+    private static final int FRAGMENT_NUM = 4;
 
-    @BindView(R.id.main_drawer_layout) DrawerLayout mDrawerLayout;
+    @BindView(R.id.main_layout) DrawerLayout mDrawerLayout;
     @BindView(R.id.main_navigation_view) NavigationView mNavigationView;
     @BindView(R.id.main_fragment_container) FrameLayout mFrameLayout;
-    TextView mLastText;
+    private TextView mLastText;
+    private SimpleDraweeView mDraweeView;
 
     private MainPresenter mPresenter;
+    private ActionBarDrawerToggle mDrawerToggle;
     private long mExitTime = 0;
     private int mLastSource = -1;
     private String mLastCid;
 
     private int mCheckItem;
     private SparseArray<BaseFragment> mFragmentArray;
-    private FragmentManager mFragmentManager;
     private BaseFragment mCurrentFragment;
+    private boolean night;
 
     @Override
     protected void initPresenter() {
@@ -59,68 +70,43 @@ public class MainActivity extends BaseActivity implements MainView {
 
     @Override
     protected void initView() {
-        ActionBarDrawerToggle drawerToggle =
-                new ActionBarDrawerToggle(this, mDrawerLayout, mToolbar, 0, 0) {
-                    @Override
-                    public void onDrawerOpened(View drawerView) {
-                        super.onDrawerOpened(drawerView);
-                    }
-                    @Override
-                    public void onDrawerClosed(View drawerView) {
-                        super.onDrawerClosed(drawerView);
-                        mCurrentFragment = mFragmentArray.get(mCheckItem);
-                        mFragmentManager.beginTransaction().show(mCurrentFragment).commit();
-                        mProgressBar.setVisibility(View.GONE);
-                    }
-                };
-        drawerToggle.syncState();
-        mDrawerLayout.setDrawerListener(drawerToggle);
-        final boolean night = CimocApplication.getPreferences().getBoolean(PreferenceManager.PREF_NIGHT, false);
-        mNavigationView.getMenu().findItem(R.id.drawer_night).setTitle(night ? R.string.drawer_light : R.string.drawer_night);
-        mNavigationView.setNavigationItemSelectedListener(new NavigationView.OnNavigationItemSelectedListener() {
-            @Override
-            public boolean onNavigationItemSelected(MenuItem item) {
-                int itemId = item.getItemId();
-                if (itemId != mCheckItem) {
-                    if (mFragmentArray.get(itemId) != null) {
-                        mCheckItem = itemId;
-                        mProgressBar.setVisibility(View.VISIBLE);
-                        mFragmentManager.beginTransaction().hide(mCurrentFragment).commit();
-                        mToolbar.setTitle(item.getTitle().toString());
-                        mDrawerLayout.closeDrawer(GravityCompat.START);
-                    } else {
-                        switch (itemId) {
-                            case R.id.drawer_night:
-                                CimocApplication.getPreferences().putBoolean(PreferenceManager.PREF_NIGHT, !night);
-                                Intent intent = getIntent();
-                                finish();
-                                startActivity(intent);
-                                break;
-                            case R.id.drawer_settings:
-                                startActivity(new Intent(MainActivity.this, SettingsActivity.class));
-                                break;
-                            case R.id.drawer_about:
-                                startActivity(new Intent(MainActivity.this, AboutActivity.class));
-                                break;
-                        }
-                    }
-                }
-                return true;
-            }
-        });
-        initHeader(mNavigationView.getHeaderView(0));
+        initDrawerToggle();
+        initNavigation();
         initFragment();
-        mProgressBar.setVisibility(View.GONE);
     }
 
     @Override
     protected void initData() {
-        mPresenter.load();
+        mPresenter.loadLast();
+        if (!mPreference.getBoolean(PreferenceManager.PREF_MAIN_NOTICE, false)) {
+            MessageDialogFragment fragment = MessageDialogFragment.newInstance(R.string.main_notice, R.string.main_notice_content, false);
+            fragment.show(getFragmentManager(), null);
+        }
     }
 
-    private void initHeader(View header) {
-        mLastText = ButterKnife.findById(header, R.id.drawer_last_read_text);
-        ButterKnife.findById(header, R.id.drawer_last_read_btn).setOnClickListener(new View.OnClickListener() {
+    private void initDrawerToggle() {
+        mDrawerToggle = new ActionBarDrawerToggle(this, mDrawerLayout, mToolbar, 0, 0) {
+            @Override
+            public void onDrawerClosed(View drawerView) {
+                super.onDrawerClosed(drawerView);
+                if (refreshCurrentFragment()) {
+                    getFragmentManager().beginTransaction().show(mCurrentFragment).commit();
+                } else {
+                    getFragmentManager().beginTransaction().add(R.id.main_fragment_container, mCurrentFragment).commit();
+                }
+            }
+        };
+        mDrawerLayout.setDrawerListener(mDrawerToggle);
+    }
+
+    private void initNavigation() {
+        night = mPreference.getBoolean(PreferenceManager.PREF_NIGHT, false);
+        mNavigationView.getMenu().findItem(R.id.drawer_night).setTitle(night ? R.string.drawer_light : R.string.drawer_night);
+        mNavigationView.setNavigationItemSelectedListener(this);
+        View header = mNavigationView.getHeaderView(0);
+        mLastText = ButterKnife.findById(header, R.id.drawer_last_title);
+        mDraweeView = ButterKnife.findById(header, R.id.drawer_last_cover);
+        mLastText.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
                 if (mLastSource != -1 && mLastCid != null) {
@@ -132,52 +118,64 @@ public class MainActivity extends BaseActivity implements MainView {
     }
 
     private void initFragment() {
-        initCheckItem();
-
-        mFragmentArray = new SparseArray<>(FRAGMENT_NUM);
-        mFragmentArray.put(R.id.drawer_cimoc, new CimocFragment());
-        mFragmentArray.put(R.id.drawer_favorite, new FavoriteFragment());
-        mFragmentArray.put(R.id.drawer_history, new HistoryFragment());
-        mFragmentArray.put(R.id.drawer_download, new DownloadFragment());
-        mFragmentArray.put(R.id.drawer_source, new SourceFragment());
-
-        mCurrentFragment = mFragmentArray.get(mCheckItem);
-        mFragmentManager = getFragmentManager();
-        FragmentTransaction transaction = mFragmentManager.beginTransaction();
-        for (int i = 0; i != FRAGMENT_NUM; ++i) {
-            BaseFragment fragment = mFragmentArray.valueAt(i);
-            transaction.add(R.id.main_fragment_container, fragment);
-            if (fragment != mCurrentFragment) {
-                transaction.hide(fragment);
-            }
-        }
-        transaction.commit();
-    }
-
-    private void initCheckItem() {
-        int home = CimocApplication.getPreferences().getInt(PreferenceManager.PREF_HOME, PreferenceManager.HOME_CIMOC);
+        int home = mPreference.getInt(PreferenceManager.PREF_OTHER_LAUNCH, PreferenceManager.HOME_SEARCH);
         switch (home) {
             default:
-            case PreferenceManager.HOME_CIMOC:
-                mCheckItem = R.id.drawer_cimoc;
+            case PreferenceManager.HOME_SEARCH:
+                mCheckItem = R.id.drawer_search;
                 break;
-            case PreferenceManager.HOME_FAVORITE:
-                mCheckItem = R.id.drawer_favorite;
+            case PreferenceManager.HOME_COMIC:
+                mCheckItem = R.id.drawer_comic;
                 break;
-            case PreferenceManager.HOME_HISTORY:
-                mCheckItem = R.id.drawer_history;
+            case PreferenceManager.HOME_SOURCE:
+                mCheckItem = R.id.drawer_source;
                 break;
-            case PreferenceManager.HOME_DOWNLOAD:
-                mCheckItem = R.id.drawer_download;
+            case PreferenceManager.HOME_TAG:
+                mCheckItem = R.id.drawer_tag;
                 break;
         }
         mNavigationView.setCheckedItem(mCheckItem);
+        mFragmentArray = new SparseArray<>(FRAGMENT_NUM);
+        refreshCurrentFragment();
+        getFragmentManager().beginTransaction().add(R.id.main_fragment_container, mCurrentFragment).commit();
+    }
+
+    private boolean refreshCurrentFragment() {
+        mCurrentFragment = mFragmentArray.get(mCheckItem);
+        if (mCurrentFragment == null) {
+            switch (mCheckItem) {
+                case R.id.drawer_search:
+                    mCurrentFragment = new SearchFragment();
+                    break;
+                case R.id.drawer_comic:
+                    mCurrentFragment = new ComicFragment();
+                    break;
+                case R.id.drawer_source:
+                    mCurrentFragment = new SourceFragment();
+                    break;
+                case R.id.drawer_tag:
+                    mCurrentFragment = new TagFragment();
+                    break;
+            }
+            mFragmentArray.put(mCheckItem, mCurrentFragment);
+            return false;
+        }
+        return true;
     }
 
     @Override
     protected void onDestroy() {
         mPresenter.detachView();
+        mPresenter = null;
         super.onDestroy();
+        ((CimocApplication) getApplication()).getBuilderProvider().clear();
+        ((CimocApplication) getApplication()).getGridRecycledPool().clear();
+    }
+
+    @Override
+    protected void onPostCreate(@Nullable Bundle savedInstanceState) {
+        super.onPostCreate(savedInstanceState);
+        mDrawerToggle.syncState();
     }
 
     @Override
@@ -188,7 +186,7 @@ public class MainActivity extends BaseActivity implements MainView {
         if (mDrawerLayout.isDrawerOpen(GravityCompat.START)) {
             mDrawerLayout.closeDrawer(GravityCompat.START);
         } else if (System.currentTimeMillis() - mExitTime > 2000) {
-            showSnackbar(R.string.main_double_click);
+            mCurrentFragment.showSnackbar(R.string.main_double_click);
             mExitTime = System.currentTimeMillis();
         } else {
             finish();
@@ -196,8 +194,51 @@ public class MainActivity extends BaseActivity implements MainView {
     }
 
     @Override
-    public void onLastLoadSuccess(int source, String cid, String title) {
-        onLastChange(source, cid, title);
+    public boolean onNavigationItemSelected(@NonNull MenuItem item) {
+        int itemId = item.getItemId();
+        if (itemId != mCheckItem) {
+            switch (itemId) {
+                case R.id.drawer_search:
+                case R.id.drawer_comic:
+                case R.id.drawer_source:
+                case R.id.drawer_tag:
+                    mCheckItem = itemId;
+                    getFragmentManager().beginTransaction().hide(mCurrentFragment).commit();
+                    if (mToolbar != null) {
+                        mToolbar.setTitle(item.getTitle().toString());
+                    }
+                    mDrawerLayout.closeDrawer(GravityCompat.START);
+                    break;
+                case R.id.drawer_night:
+                    night = !night;
+                    mPreference.putBoolean(PreferenceManager.PREF_NIGHT, night);
+                    mNavigationView.getMenu().findItem(R.id.drawer_night).setTitle(night ? R.string.drawer_light : R.string.drawer_night);
+                    if (mNightMask != null) {
+                        mNightMask.setVisibility(night ? View.VISIBLE : View.INVISIBLE);
+                    }
+                    break;
+                case R.id.drawer_settings:
+                    startActivity(new Intent(MainActivity.this, SettingsActivity.class));
+                    break;
+                case R.id.drawer_about:
+                    startActivity(new Intent(MainActivity.this, AboutActivity.class));
+                    break;
+                case R.id.drawer_backup:
+                    startActivity(new Intent(MainActivity.this, BackupActivity.class));
+                    break;
+            }
+        }
+        return true;
+    }
+
+    @Override
+    public void onMessagePositiveClick(int type) {
+        mPreference.putBoolean(PreferenceManager.PREF_MAIN_NOTICE, true);
+    }
+
+    @Override
+    public void onLastLoadSuccess(int source, String cid, String title, String cover) {
+        onLastChange(source, cid, title,cover);
     }
 
     @Override
@@ -206,15 +247,35 @@ public class MainActivity extends BaseActivity implements MainView {
     }
 
     @Override
-    public void onLastChange(int source, String cid, String title) {
+    public void onLastChange(int source, String cid, String title, String cover) {
         mLastSource = source;
         mLastCid = cid;
         mLastText.setText(title);
+        DraweeController controller = ((CimocApplication) getApplication()).getBuilderProvider().get(source)
+                .setOldController(mDraweeView.getController())
+                .setUri(cover)
+                .build();
+        mDraweeView.setController(controller);
+    }
+
+    @Override
+    public void onThemeChange(@StyleRes int theme, @ColorRes int primary, @ColorRes int accent) {
+        setTheme(theme);
+        ColorStateList itemList = new ColorStateList(new int[][]{{ -android.R.attr.state_checked }, { android.R.attr.state_checked }},
+                new int[]{Color.BLACK, ContextCompat.getColor(this, accent)});
+        mNavigationView.setItemTextColor(itemList);
+        ColorStateList iconList = new ColorStateList(new int[][]{{ -android.R.attr.state_checked }, { android.R.attr.state_checked }},
+                new int[]{0x8A000000, ContextCompat.getColor(this, accent)});
+        mNavigationView.setItemIconTintList(iconList);
+        mNavigationView.getHeaderView(0).setBackgroundColor(ContextCompat.getColor(this, primary));
+        if (mToolbar != null) {
+            mToolbar.setBackgroundColor(ContextCompat.getColor(this, primary));
+        }
     }
 
     @Override
     protected String getDefaultTitle() {
-        int home = CimocApplication.getPreferences().getInt(PreferenceManager.PREF_HOME, PreferenceManager.HOME_CIMOC);
+        int home = mPreference.getInt(PreferenceManager.PREF_OTHER_LAUNCH, PreferenceManager.HOME_SEARCH);
         return getResources().getStringArray(R.array.home_items)[home];
     }
 

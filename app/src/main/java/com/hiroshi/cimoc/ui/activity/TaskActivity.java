@@ -2,7 +2,6 @@ package com.hiroshi.cimoc.ui.activity;
 
 import android.content.ComponentName;
 import android.content.Context;
-import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.os.IBinder;
@@ -13,26 +12,37 @@ import android.view.MenuItem;
 import android.view.View;
 
 import com.hiroshi.cimoc.R;
+import com.hiroshi.cimoc.core.manager.PreferenceManager;
 import com.hiroshi.cimoc.model.Chapter;
+import com.hiroshi.cimoc.model.Comic;
+import com.hiroshi.cimoc.model.Selectable;
 import com.hiroshi.cimoc.model.Task;
 import com.hiroshi.cimoc.presenter.TaskPresenter;
 import com.hiroshi.cimoc.service.DownloadService;
 import com.hiroshi.cimoc.service.DownloadService.DownloadServiceBinder;
 import com.hiroshi.cimoc.ui.adapter.BaseAdapter;
 import com.hiroshi.cimoc.ui.adapter.TaskAdapter;
+import com.hiroshi.cimoc.ui.fragment.dialog.MessageDialogFragment;
+import com.hiroshi.cimoc.ui.fragment.dialog.SelectDialogFragment;
 import com.hiroshi.cimoc.ui.view.TaskView;
-import com.hiroshi.cimoc.utils.DialogUtils;
+import com.hiroshi.cimoc.utils.ThemeUtils;
 
+import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
 
 import butterknife.BindView;
 import butterknife.OnClick;
+import rx.Observable;
+import rx.functions.Action1;
+import rx.functions.Func1;
 
 /**
  * Created by Hiroshi on 2016/9/7.
  */
-public class TaskActivity extends BackActivity implements TaskView, BaseAdapter.OnItemClickListener, BaseAdapter.OnItemLongClickListener {
+public class TaskActivity extends BackActivity implements TaskView, BaseAdapter.OnItemClickListener,
+        BaseAdapter.OnItemLongClickListener, MessageDialogFragment.MessageDialogListener,
+        SelectDialogFragment.SelectDialogListener {
 
     @BindView(R.id.task_layout) View mTaskLayout;
     @BindView(R.id.task_recycler_view) RecyclerView mRecyclerView;
@@ -41,11 +51,7 @@ public class TaskActivity extends BackActivity implements TaskView, BaseAdapter.
     private TaskPresenter mPresenter;
     private ServiceConnection mConnection;
     private DownloadServiceBinder mBinder;
-
-    private long key;
-    private int source;
-    private String cid;
-    private String comic;
+    private List<Task> mTempList;
 
     @Override
     protected void initPresenter() {
@@ -67,20 +73,21 @@ public class TaskActivity extends BackActivity implements TaskView, BaseAdapter.
 
     @Override
     protected void initData() {
-        key = getIntent().getLongExtra(EXTRA_KEY, -1);
-        source = getIntent().getIntExtra(EXTRA_SOURCE, -1);
-        cid = getIntent().getStringExtra(EXTRA_CID);
-        comic = getIntent().getStringExtra(EXTRA_COMIC);
-        mPresenter.loadTask(key);
+        mTempList = new LinkedList<>();
+        long key = getIntent().getLongExtra(EXTRA_KEY, -1);
+        mPresenter.load(key);
     }
 
     @Override
     protected void onDestroy() {
+        mPresenter.detachView();
+        mPresenter = null;
+        super.onDestroy();
         if (mConnection != null) {
             unbindService(mConnection);
+            mConnection = null;
+            mBinder = null;
         }
-        mPresenter.detachView();
-        super.onDestroy();
     }
 
     @Override
@@ -89,67 +96,52 @@ public class TaskActivity extends BackActivity implements TaskView, BaseAdapter.
         return super.onCreateOptionsMenu(menu);
     }
 
-    @Override
-    public boolean onOptionsItemSelected(MenuItem item) {
-        switch (item.getItemId()) {
-            case R.id.task_delete_multi:
-                String[] title = mTaskAdapter.getTaskTitle();
-                final boolean[] array = new boolean[title.length];
-                DialogUtils.buildMultiChoiceDialog(this, R.string.task_delete_multi, title, array,
-                        new DialogInterface.OnMultiChoiceClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int which, boolean isChecked) {
-                                array[which] = isChecked;
-                            }
-                        }, R.string.task_delete_all, new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int which) {
-                                mProgressDialog.show();
-                                mPresenter.deleteTask(new LinkedList<>(mTaskAdapter.getDateSet()), source, comic, key, true);
-                                mTaskAdapter.clear();
-                            }
-                        }, new DialogInterface.OnClickListener() {
-                            @Override
-                            public void onClick(DialogInterface dialog, int which) {
-                                mProgressDialog.show();
-                                List<Task> list = new LinkedList<>();
-                                for (int i = 0; i != array.length; ++i) {
-                                    if (array[i]) {
-                                        list.add(mTaskAdapter.getItem(i));
-                                    }
-                                }
-                                if (list.isEmpty()) {
-                                    mProgressDialog.hide();
-                                } else {
-                                    mPresenter.deleteTask(list, source, comic, key, mTaskAdapter.getItemCount() == list.size());
-                                    mTaskAdapter.removeAll(list);
-                                }
-                            }
-                        }).show();
-                break;
-        }
-        return super.onOptionsItemSelected(item);
+    @OnClick(R.id.task_launch_btn) void onLaunchClick() {
+        Comic comic = mPresenter.getComic();
+        Intent intent = DetailActivity.createIntent(this, comic.getId(), comic.getSource(), comic.getCid());
+        startActivity(intent);
     }
 
     @Override
-    public void onItemClick(View view, int position) {
+    public void onChapterChange(String last) {
+        mTaskAdapter.setLast(mPresenter.getComic().getLast());
+    }
+
+    @Override
+    public void onItemClick(View view, final int position) {
         Task task = mTaskAdapter.getItem(position);
         switch (task.getState()) {
             case Task.STATE_FINISH:
-                int pos = 0;
-                List<Chapter> list = new LinkedList<>();
-                List<Task> dataSet = mTaskAdapter.getDateSet();
-                for (int i = 0; i != dataSet.size(); ++i) {
-                    Task temp = dataSet.get(i);
-                    if (temp.getState() == Task.STATE_FINISH) {
-                        list.add(new Chapter(temp.getTitle(), temp.getPath(), temp.getMax(), true));
-                        if (temp.equals(task)) {
-                            pos = list.size() - 1;
-                        }
-                    }
-                }
-                Intent readerIntent = ReaderActivity.createIntent(this, source, cid, comic, list, pos);
-                startActivity(readerIntent);
+                final String last = mTaskAdapter.getItem(position).getPath();
+                Observable.from(mTaskAdapter.getDateSet())
+                        .filter(new Func1<Task, Boolean>() {
+                            @Override
+                            public Boolean call(Task task) {
+                                return task.getState() == Task.STATE_FINISH;
+                            }
+                        })
+                        .map(new Func1<Task, Chapter>() {
+                            @Override
+                            public Chapter call(Task task) {
+                                return new Chapter(task.getTitle(), task.getPath(), task.getMax(), true);
+                            }
+                        })
+                        .toList()
+                        .subscribe(new Action1<List<Chapter>>() {
+                            @Override
+                            public void call(final List<Chapter> list) {
+                                for (Chapter chapter : list) {
+                                    if (chapter.getPath().equals(last)) {
+                                        mTaskAdapter.setLast(last);
+                                        long id = mPresenter.updateLast(last);
+                                        int mode = mPreference.getInt(PreferenceManager.PREF_READER_MODE, PreferenceManager.READER_MODE_PAGE);
+                                        Intent readerIntent = ReaderActivity.createIntent(TaskActivity.this, id, mode, list);
+                                        startActivity(readerIntent);
+                                        break;
+                                    }
+                                }
+                            }
+                        });
                 break;
             case Task.STATE_PAUSE:
             case Task.STATE_ERROR:
@@ -168,32 +160,96 @@ public class TaskActivity extends BackActivity implements TaskView, BaseAdapter.
         }
     }
 
-    @Override
-    public void onItemLongClick(View view, final int position) {
-        DialogUtils.buildPositiveDialog(TaskActivity.this, R.string.dialog_confirm, R.string.task_delete_confirm,
-                new DialogInterface.OnClickListener() {
-                    @Override
-                    public void onClick(DialogInterface dialog, int which) {
-                        mProgressDialog.show();
-                        Task task = mTaskAdapter.getItem(position);
-                        mPresenter.deleteTask(task, mTaskAdapter.getItemCount() == 1);
-                        mTaskAdapter.remove(position);
-                    }
-                }).show();
-    }
-
-    @OnClick(R.id.task_launch_btn) void onLaunchClick() {
-        Intent intent = DetailActivity.createIntent(this, key, source, cid);
-        startActivity(intent);
-    }
+    /**
+     *  delete task
+     */
 
     @Override
-    public void onLoadSuccess(final List<Task> list) {
-        for (Task task : list) {
-            task.setInfo(source, cid, comic);
+    public boolean onOptionsItemSelected(MenuItem item) {
+        switch (item.getItemId()) {
+            case R.id.task_delete_multi:
+                ArrayList<Selectable> list = new ArrayList<>(mTaskAdapter.getItemCount());
+                for (Task task : mTaskAdapter.getDateSet()) {
+                    list.add(new Selectable(false, false, task.getTitle()));
+                }
+                SelectDialogFragment fragment = SelectDialogFragment.newInstance(list, R.string.task_delete_multi);
+                fragment.show(getFragmentManager(), null);
+                break;
         }
+        return super.onOptionsItemSelected(item);
+    }
+
+    @Override
+    public void onSelectPositiveClick(int type, List<Selectable> list) {
+        for (int i = 0; i != list.size(); ++i) {
+            if (list.get(i).isChecked()) {
+                mTempList.add(mTaskAdapter.getItem(i));
+            }
+        }
+        deleteTask();
+    }
+
+    @Override
+    public void onSelectNeutralClick(int type, List<Selectable> list) {
+        mTempList = mTaskAdapter.getDateSet();
+        deleteTask();
+    }
+
+    @Override
+    public void onItemLongClick(View view, int position) {
+        MessageDialogFragment fragment = MessageDialogFragment.newInstance(R.string.dialog_confirm,
+                R.string.task_delete_confirm, true);
+        Task task = mTaskAdapter.getItem(position);
+        mTempList.add(task);
+        fragment.show(getFragmentManager(), null);
+    }
+
+    @Override
+    public void onMessagePositiveClick(int type) {
+        deleteTask();
+    }
+
+    private void deleteTask() {
+        if (!mTempList.isEmpty()) {
+            showProgressDialog();
+            for (Task task : mTempList) {
+                mBinder.getService().removeDownload(task.getId());
+            }
+            mPresenter.deleteTask(mTempList, mTaskAdapter.getItemCount() == mTempList.size());
+        }
+    }
+
+    @Override
+    public void onTaskDeleteSuccess() {
+        mTaskAdapter.removeAll(mTempList);
+        mTempList.clear();
+        hideProgressDialog();
+        showSnackbar(R.string.common_delete_success);
+    }
+
+    @Override
+    public void onTaskDeleteFail() {
+        mTempList.clear();
+        hideProgressDialog();
+        showSnackbar(R.string.common_delete_fail);
+    }
+
+    /**
+     *  init: load task -> sort task
+     */
+
+    @Override
+    public void onTaskLoadSuccess(final List<Task> list) {
+        mTaskAdapter.setColorId(ThemeUtils.getResourceId(this, R.attr.colorAccent));
+        mTaskAdapter.setLast(mPresenter.getComic().getLast());
         mTaskAdapter.addAll(list);
-        mPresenter.sortTask(list, source, comic);
+        mPresenter.sortTask(list);
+    }
+
+    @Override
+    public void onTaskLoadFail() {
+        hideProgressBar();
+        showSnackbar(R.string.task_load_task_fail);
     }
 
     @Override
@@ -205,7 +261,7 @@ public class TaskActivity extends BackActivity implements TaskView, BaseAdapter.
                 mBinder.getService().initTask(mTaskAdapter.getDateSet());
                 mTaskAdapter.setData(list);
                 mRecyclerView.setAdapter(mTaskAdapter);
-                mProgressBar.setVisibility(View.GONE);
+                hideProgressBar();
             }
 
             @Override
@@ -216,29 +272,18 @@ public class TaskActivity extends BackActivity implements TaskView, BaseAdapter.
 
     @Override
     public void onLoadIndexFail() {
-        mProgressBar.setVisibility(View.GONE);
-        showSnackbar(R.string.task_load_fail);
+        hideProgressBar();
+        showSnackbar(R.string.task_load_index_fail);
     }
 
     @Override
     public void onTaskAdd(List<Task> list) {
-        Task task = list.get(0);
-        if (task.getSource() == source && task.getComic().equals(comic)) {
-            mTaskAdapter.addAll(0, list);
-        }
+        mTaskAdapter.addAll(0, list);
     }
 
-    @Override
-    public void onTaskDeleteSuccess() {
-        mProgressDialog.hide();
-        showSnackbar(R.string.task_delete_success);
-    }
-
-    @Override
-    public void onTaskDeleteFail() {
-        mProgressDialog.hide();
-        showSnackbar(R.string.task_delete_fail);
-    }
+    /**
+     *  task state
+     */
 
     @Override
     public void onTaskError(long id) {
@@ -249,28 +294,6 @@ public class TaskActivity extends BackActivity implements TaskView, BaseAdapter.
                 mTaskAdapter.getItem(position).setState(Task.STATE_ERROR);
                 notifyItemChanged(position);
             }
-        }
-    }
-
-    @Override
-    public void onTaskDoing(long id, int max) {
-        int position = mTaskAdapter.getPositionById(id);
-        if (position != -1) {
-            Task task = mTaskAdapter.getItem(position);
-            task.setMax(max);
-            task.setState(Task.STATE_DOING);
-            notifyItemChanged(position);
-        }
-    }
-
-    @Override
-    public void onTaskFinish(long id) {
-        int position = mTaskAdapter.getPositionById(id);
-        if (position != -1) {
-            Task task = mTaskAdapter.getItem(position);
-            task.setProgress(task.getMax());
-            task.setState(Task.STATE_FINISH);
-            notifyItemChanged(position);
         }
     }
 
@@ -288,8 +311,10 @@ public class TaskActivity extends BackActivity implements TaskView, BaseAdapter.
         int position = mTaskAdapter.getPositionById(id);
         if (position != -1) {
             Task task = mTaskAdapter.getItem(position);
-            task.setProgress(progress);
             task.setMax(max);
+            task.setProgress(progress);
+            int state = max == progress ? Task.STATE_FINISH : Task.STATE_DOING;
+            task.setState(state);
             notifyItemChanged(position);
         }
     }
@@ -316,16 +341,10 @@ public class TaskActivity extends BackActivity implements TaskView, BaseAdapter.
     }
 
     public static final String EXTRA_KEY = "a";
-    public static final String EXTRA_SOURCE = "b";
-    public static final String EXTRA_CID = "c";
-    public static final String EXTRA_COMIC = "d";
 
-    public static Intent createIntent(Context context, Long id, int source, String cid, String comic) {
+    public static Intent createIntent(Context context, Long id) {
         Intent intent = new Intent(context, TaskActivity.class);
         intent.putExtra(EXTRA_KEY, id);
-        intent.putExtra(EXTRA_SOURCE, source);
-        intent.putExtra(EXTRA_CID, cid);
-        intent.putExtra(EXTRA_COMIC, comic);
         return intent;
     }
 

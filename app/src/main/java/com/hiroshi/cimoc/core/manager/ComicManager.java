@@ -23,23 +23,20 @@ public class ComicManager {
         mComicDao = CimocApplication.getDaoSession().getComicDao();
     }
 
-    public <T> Observable<T> callInTx(Callable<T> callable) {
+    public <T> Observable<T> callInRx(Callable<T> callable) {
         return mComicDao.getSession()
                 .rxTx()
                 .call(callable);
     }
 
-    public Observable<Void> runInTx(Runnable runnable) {
+    public Observable<Void> runInRx(Runnable runnable) {
         return mComicDao.getSession()
                 .rxTx()
                 .run(runnable);
     }
 
-    public Observable<List<Comic>> listSource(int source) {
-        return mComicDao.queryBuilder()
-                .where(Properties.Source.eq(source))
-                .rx()
-                .list();
+    public void runInTx(Runnable runnable) {
+        mComicDao.getSession().runInTx(runnable);
     }
 
     public Observable<List<Comic>> listFavorite() {
@@ -66,17 +63,6 @@ public class ComicManager {
                 .list();
     }
 
-    public Observable<Comic> loadInRx(int source, String cid) {
-        return mComicDao.queryBuilder()
-                .where(Properties.Source.eq(source), Properties.Cid.eq(cid))
-                .rx()
-                .unique();
-    }
-
-    public Observable<Comic> loadInRx(long id) {
-        return mComicDao.rx().load(id);
-    }
-
     public Comic load(long id) {
         return mComicDao.load(id);
     }
@@ -89,6 +75,7 @@ public class ComicManager {
 
     public Observable<Comic> loadLast() {
         return mComicDao.queryBuilder()
+                .where(Properties.History.isNotNull())
                 .orderDesc(Properties.History)
                 .limit(1)
                 .rx()
@@ -105,10 +92,6 @@ public class ComicManager {
 
     public void deleteByKey(long id) {
         mComicDao.deleteByKey(id);
-    }
-
-    public void deleteInTx(List<Comic> list) {
-        mComicDao.deleteInTx(list);
     }
 
     public long insert(Comic comic) {
